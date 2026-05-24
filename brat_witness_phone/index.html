@@ -19,9 +19,12 @@
             <p class="eyebrow">BRAT WITNESS</p>
             <h1>Telefon, który Cię zna.</h1>
           </div>
-          <button id="privacyToggle" class="icon-button" title="Tryb prywatny" aria-label="Tryb prywatny">
-            <span class="shield">◇</span>
-          </button>
+          <div class="top-actions">
+            <button id="voiceToggle" class="icon-button voice-toggle" title="Przełącz głos" aria-label="Przełącz głos">🔊</button>
+            <button id="privacyToggle" class="icon-button" title="Tryb prywatny" aria-label="Tryb prywatny">
+              <span class="shield">◇</span>
+            </button>
+          </div>
         </header>
 
         <nav class="tabs" aria-label="Widoki">
@@ -82,6 +85,7 @@
         <section id="chat" class="view">
           <div id="messages" class="messages" aria-live="polite"></div>
           <p id="voiceStatus" class="voice-status" aria-live="polite"></p>
+          <p id="speechStatus" class="speech-status" aria-live="polite">Głos wyłączony</p>
           <form id="composer" class="composer">
             <input
               id="messageInput"
@@ -164,6 +168,10 @@
             <article>
               <span>Echo GPT</span>
               <strong id="echoStatus">disabled</strong>
+            </article>
+            <article>
+              <span>Voice Output</span>
+              <strong id="voiceOutputStatus">checking</strong>
             </article>
             <article>
               <span>Warstwy</span>

@@ -73,6 +73,12 @@ button {
   gap: 16px;
 }
 
+.top-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .eyebrow,
 .label {
   margin: 0 0 4px;
@@ -111,6 +117,12 @@ h2 {
 .privacy-on .icon-button {
   background: var(--green);
   color: var(--ink);
+}
+
+.voice-toggle.speaking {
+  background: var(--amber);
+  color: var(--ink);
+  box-shadow: 0 0 0 4px rgba(241, 180, 91, 0.16), 0 0 22px rgba(241, 180, 91, 0.62);
 }
 
 .shield {
@@ -346,11 +358,19 @@ h2 {
   box-shadow: 0 0 0 4px rgba(241, 180, 91, 0.16), 0 0 22px rgba(241, 180, 91, 0.62);
 }
 
-.voice-status {
+.voice-status,
+.speech-status {
   min-height: 20px;
-  color: var(--amber);
   font-size: 0.86rem;
   padding: 0 2px;
+}
+
+.voice-status {
+  color: var(--amber);
+}
+
+.speech-status {
+  color: var(--green);
 }
 
 .memory-stats {

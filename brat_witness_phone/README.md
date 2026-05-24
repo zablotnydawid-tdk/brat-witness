@@ -57,6 +57,7 @@ W zakładce `Rozmowa` wpisz:
 - Auto-init pierwszego startu w `localStorage`.
 - Boot 11/11 warstw MVP.
 - Voice Input przez Web Speech API, jeśli wspiera go przeglądarka.
+- Voice Output przez Web Speech Synthesis API, jeśli wspiera go przeglądarka.
 - Relational Memory v2.
 - Smart Recall po projekcie, osobie i tagu.
 - Przypomnienia jako lokalne zadania.
@@ -83,6 +84,30 @@ Aplikacja nie zapisuje audio i nie wysyła plików audio. Używa tylko mechanizm
 
 ```text
 Ta przeglądarka nie wspiera mikrofonu.
+```
+
+## Voice Companion Layer
+
+Brat Witness ma też output głosowy przez Web Speech Synthesis API (`speechSynthesis` i `SpeechSynthesisUtterance`). Tekst zostaje jako fallback, ale na wspieranych przeglądarkach Witness czyta krótkie odpowiedzi głosem.
+
+Komendy:
+
+- `wyłącz głos`
+- `włącz głos`
+- `stop mówienie`
+
+Zasady:
+
+- nie czyta długich logów, JSON ani dużych list,
+- czyta krótkie potwierdzenia, alerty i pytania,
+- przed następną odpowiedzią zatrzymuje poprzedni głos,
+- zapamiętuje w `localStorage`, czy głos jest włączony i jaki głos był ostatnio używany,
+- nie zapisuje audio.
+
+Android Chrome jest rekomendowany. Jeśli przeglądarka nie wspiera voice output, aplikacja pokaże:
+
+```text
+Ta przeglądarka nie wspiera voice output.
 ```
 
 ## Echo GPT Layer

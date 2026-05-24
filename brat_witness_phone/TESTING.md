@@ -86,6 +86,59 @@ echo rozwiń projekt Aurora
 
 Oczekiwane: aplikacja prosi o zgodę. Po kliknięciu `Użyj Echo GPT` pokazuje odpowiedź `Echo GPT mock`.
 
+## Microphone input
+
+- Wejdź w `Rozmowa`.
+- Kliknij `🎤`.
+- Powiedz `status telefonu`.
+- Oczekiwane: status `Słucham...`, potem `Przetwarzam...`, tekst trafia do inputu i komenda się wykonuje.
+
+## Voice output
+
+- Wpisz `status telefonu`.
+- Oczekiwane: Witness pokazuje tekst i czyta krótką odpowiedź głosem, jeśli przeglądarka wspiera `speechSynthesis`.
+
+## Toggle voice
+
+Komendy:
+
+```text
+wyłącz głos
+włącz głos
+```
+
+Oczekiwane: przycisk zmienia się między `🔊` i `🔇`, a preferencja zapisuje się w `localStorage`.
+
+## Pending action voice confirmation
+
+- Uruchom komendę, która wymaga zgody lub działania.
+- Oczekiwane: Witness głosem pyta `Mam to zrobić?`, jeśli akcja jest oznaczona jako pending.
+
+## Echo voice confirmation
+
+Komenda:
+
+```text
+echo rozwiń projekt Aurora
+```
+
+Oczekiwane: Witness głosem mówi `Echo może pomóc głębiej. Wysłać tylko potrzebny kontekst?`.
+
+## Stop speaking
+
+Komenda:
+
+```text
+stop mówienie
+```
+
+Oczekiwane: bieżące mówienie zatrzymuje się.
+
+## Unsupported browser fallback
+
+- Otwórz aplikację w przeglądarce bez Web Speech API.
+- Oczekiwane: tekst działa normalnie, a UI pokazuje `Voice unsupported` albo komunikat o braku wsparcia mikrofonu/outputu.
+
 ## Clear memory
 
 - Wejdź w `Pamięć`.

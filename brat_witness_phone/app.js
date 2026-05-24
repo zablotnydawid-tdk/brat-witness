@@ -1,6 +1,7 @@
 const STORAGE_KEY = "brat-witness-phone-memory-v2";
 const CONFIG_KEY = "bratWitnessPhoneConfig";
 const LAYERS_KEY = "bratWitnessLayers";
+const VOICE_OUTPUT_KEY = "bratWitnessVoiceOutput";
 
 // boot
 const layers = [
@@ -34,6 +35,7 @@ const TYPE_LABELS = {
 
 // state
 const state = loadState();
+const voiceOutput = loadVoiceOutput();
 let deferredInstallPrompt = null;
 let serviceWorkerReady = false;
 let offlineCacheReady = false;
@@ -51,6 +53,7 @@ const els = {
   privacyReadout: document.querySelector("#privacyReadout"),
   messages: document.querySelector("#messages"),
   voiceStatus: document.querySelector("#voiceStatus"),
+  speechStatus: document.querySelector("#speechStatus"),
   input: document.querySelector("#messageInput"),
   composer: document.querySelector("#composer"),
   micButton: document.querySelector("#micButton"),
@@ -61,8 +64,10 @@ const els = {
   phoneMemoryStatus: document.querySelector("#phoneMemoryStatus"),
   serviceWorkerStatus: document.querySelector("#serviceWorkerStatus"),
   echoStatus: document.querySelector("#echoStatus"),
+  voiceOutputStatus: document.querySelector("#voiceOutputStatus"),
   layersStatus: document.querySelector("#layersStatus"),
   installApp: document.querySelector("#installApp"),
+  voiceToggle: document.querySelector("#voiceToggle"),
   useEcho: document.querySelector("#useEcho"),
   echoConsent: document.querySelector("#echoConsent"),
   installHelp: document.querySelector("#installHelp"),
@@ -134,6 +139,7 @@ function init() {
 
   els.installApp.addEventListener("click", installOnPhone);
   els.useEcho.addEventListener("click", executePendingEcho);
+  els.voiceToggle.addEventListener("click", toggleVoice);
   els.micButton.addEventListener("click", () => {
     if (isListening) {
       stopListening();
@@ -143,17 +149,16 @@ function init() {
   });
 
   initVoiceInput();
+  initVoiceOutput();
   refreshServiceWorkerStatus();
   refreshOfflineCacheStatus();
   renderLayers();
   if (firstRun) {
-    state.messages.push({
-      role: "ai",
-      text: "Dobra, lokalna warstwa gotowa. Wszystko siedzi na tym telefonie.",
-    });
+    addWitnessMessage("Dobra, lokalna warstwa gotowa. Wszystko siedzi na tym telefonie.", { speakNow: false });
     saveState();
   }
   render();
+  if (firstRun) speak("Dobra, lokalna warstwa gotowa. Wszystko siedzi na tym telefonie.");
 }
 
 // voice
@@ -230,6 +235,158 @@ function setVoiceStatus(message) {
   els.voiceStatus.textContent = message;
 }
 
+// voice output
+function initVoiceOutput() {
+  if (!supportsVoiceOutput()) {
+    voiceOutput.enabled = false;
+    voiceOutput.speaking = false;
+    setSpeechStatus("Voice unsupported");
+    saveVoiceOutput();
+    return;
+  }
+
+  loadAvailableVoices();
+  window.speechSynthesis.onvoiceschanged = loadAvailableVoices;
+  setSpeechStatus(voiceOutput.enabled ? "" : "Głos wyłączony");
+}
+
+function supportsVoiceOutput() {
+  return "speechSynthesis" in window && "SpeechSynthesisUtterance" in window;
+}
+
+function loadAvailableVoices() {
+  if (!supportsVoiceOutput()) return [];
+
+  const voices = window.speechSynthesis.getVoices();
+  if (!voices.length) return voices;
+
+  const savedVoice = voices.find((voice) => voice.name === voiceOutput.selectedVoice);
+  const polishVoice = voices.find((voice) => voice.lang && voice.lang.toLowerCase().startsWith("pl"));
+  const fallbackVoice = savedVoice || polishVoice || voices[0];
+  voiceOutput.selectedVoice = fallbackVoice ? fallbackVoice.name : null;
+  saveVoiceOutput();
+  renderVoiceOutputStatus();
+  return voices;
+}
+
+function speak(text) {
+  if (!supportsVoiceOutput()) {
+    setSpeechStatus("Ta przeglądarka nie wspiera voice output.");
+    return;
+  }
+  if (!voiceOutput.enabled || !shouldSpeakText(text)) return;
+
+  stopSpeaking({ silent: true });
+
+  const spokenText = prepareSpokenText(text);
+  const utterance = new SpeechSynthesisUtterance(spokenText);
+  const voices = loadAvailableVoices();
+  const selected = voices.find((voice) => voice.name === voiceOutput.selectedVoice);
+  if (selected) utterance.voice = selected;
+
+  utterance.volume = voiceOutput.volume;
+  utterance.rate = voiceOutput.rate;
+  utterance.pitch = voiceOutput.pitch;
+  utterance.lang = selected ? selected.lang : "pl-PL";
+
+  utterance.onstart = () => {
+    voiceOutput.speaking = true;
+    setSpeechStatus("Mówię...");
+    renderVoiceOutputStatus();
+  };
+
+  utterance.onend = () => {
+    voiceOutput.speaking = false;
+    setSpeechStatus(voiceOutput.enabled ? "" : "Głos wyłączony");
+    renderVoiceOutputStatus();
+  };
+
+  utterance.onerror = () => {
+    voiceOutput.speaking = false;
+    setSpeechStatus("Voice unsupported");
+    renderVoiceOutputStatus();
+  };
+
+  window.speechSynthesis.speak(utterance);
+}
+
+function stopSpeaking(options = {}) {
+  if (!supportsVoiceOutput()) return;
+  window.speechSynthesis.cancel();
+  voiceOutput.speaking = false;
+  if (!options.silent) setSpeechStatus(voiceOutput.enabled ? "" : "Głos wyłączony");
+  renderVoiceOutputStatus();
+}
+
+function toggleVoice() {
+  if (!supportsVoiceOutput()) {
+    voiceOutput.enabled = false;
+    setSpeechStatus("Ta przeglądarka nie wspiera voice output.");
+    renderVoiceOutputStatus();
+    saveVoiceOutput();
+    return;
+  }
+
+  voiceOutput.enabled = !voiceOutput.enabled;
+  if (!voiceOutput.enabled) {
+    stopSpeaking({ silent: true });
+    setSpeechStatus("Głos wyłączony");
+  } else {
+    setSpeechStatus("");
+    speak("Dobra, głos włączony.");
+  }
+  saveVoiceOutput();
+  renderVoiceOutputStatus();
+}
+
+function setSpeechStatus(message) {
+  els.speechStatus.textContent = message;
+}
+
+function speakWitnessReply(text, result = {}) {
+  if (["healthcheck", "voice.stop", "voice.off"].includes(result.intent)) return;
+  if (result.intent === "echo.request") {
+    speak("Echo może pomóc głębiej. Wysłać tylko potrzebny kontekst?");
+    return;
+  }
+  if (detectHighRisk(text)) {
+    speak("To dotknie telefonu albo danych. Potwierdzasz?");
+    return;
+  }
+  if (result.pendingAction) {
+    speak("Mam to zrobić?");
+    return;
+  }
+  speak(text);
+}
+
+function shouldSpeakText(text) {
+  const clean = String(text || "").trim();
+  if (!clean) return false;
+  if (clean.length > 220) return false;
+  if ((clean.match(/\n/g) || []).length > 2) return false;
+  if (/^\s*[{[]/.test(clean)) return false;
+  if (/"\w+"\s*:/.test(clean)) return false;
+  if (clean.includes("localStorage OK") || clean.includes("offline cache")) return false;
+  return true;
+}
+
+function prepareSpokenText(text) {
+  return String(text || "")
+    .replace(/Echo GPT mock:\s*/i, "Echo mówi: ")
+    .replace(/\n+/g, ". ")
+    .split(/[.!?]/)
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .slice(0, 2)
+    .join(". ");
+}
+
+function detectHighRisk(text) {
+  const value = normalize(text);
+  return ["usun", "usuń", "dane", "telefon"].some((word) => value.includes(word));
+}
+
 // router
 function setView(viewName) {
   document.querySelectorAll(".tab").forEach((tab) => {
@@ -241,13 +398,15 @@ function setView(viewName) {
 }
 
 function handleUserMessage(text) {
+  stopSpeaking({ silent: true });
   state.messages.push({ role: "user", text });
   const result = runIntentEngine(text);
   state.lastIntent = result.intent;
   state.lastRoute = result.route;
-  state.messages.push({ role: "ai", text: result.reply });
+  addWitnessMessage(result.reply, { speakNow: false });
   saveState();
   render();
+  speakWitnessReply(result.reply, result);
 }
 
 function runIntentEngine(rawText) {
@@ -267,6 +426,36 @@ function runIntentEngine(rawText) {
       intent: "phone.status",
       route: "lokalnie",
       reply: "Lokalnie. Pamięć działa. Router gotowy. Chmura wyłączona.",
+    };
+  }
+
+  if (command.intent === "voice.off") {
+    voiceOutput.enabled = false;
+    stopSpeaking({ silent: true });
+    saveVoiceOutput();
+    return {
+      intent: "voice.off",
+      route: "lokalnie",
+      reply: "Głos wyłączony.",
+    };
+  }
+
+  if (command.intent === "voice.on") {
+    voiceOutput.enabled = supportsVoiceOutput();
+    saveVoiceOutput();
+    return {
+      intent: "voice.on",
+      route: "lokalnie",
+      reply: voiceOutput.enabled ? "Dobra, głos włączony." : "Ta przeglądarka nie wspiera voice output.",
+    };
+  }
+
+  if (command.intent === "voice.stop") {
+    stopSpeaking({ silent: true });
+    return {
+      intent: "voice.stop",
+      route: "lokalnie",
+      reply: "Już cicho.",
     };
   }
 
@@ -318,6 +507,18 @@ function runIntentEngine(rawText) {
 
 function parseCommand(rawText) {
   const text = normalize(rawText);
+
+  if (text === "wylacz glos" || text === "wyłącz głos") {
+    return { intent: "voice.off" };
+  }
+
+  if (text === "wlacz glos" || text === "włącz głos") {
+    return { intent: "voice.on" };
+  }
+
+  if (text === "stop mowienie" || text === "stop mówienie") {
+    return { intent: "voice.stop" };
+  }
 
   if (text === "healthcheck") {
     return { intent: "healthcheck" };
@@ -578,7 +779,7 @@ function callEchoGPT(payload) {
 function executePendingEcho() {
   if (!state.pendingEchoPayload) {
     state.echoStatus = "disabled";
-    state.messages.push({ role: "ai", text: "Najpierw poproś o coś typu: echo rozwiń projekt Aurora." });
+    addWitnessMessage("Najpierw poproś o coś typu: echo rozwiń projekt Aurora.");
     saveState();
     render();
     return;
@@ -587,10 +788,7 @@ function executePendingEcho() {
   state.echoEnabled = true;
   state.echoStatus = "active";
   const echo = callEchoGPT(state.pendingEchoPayload);
-  state.messages.push({
-    role: "ai",
-    text: `${echo.provider}:\n${echo.text}`,
-  });
+  addWitnessMessage(`${echo.provider}:\n${echo.text}`);
   state.pendingEchoPayload = null;
   saveState();
   render();
@@ -749,10 +947,7 @@ function bootBratWitnessLayers() {
 function installOnPhone() {
   if (!deferredInstallPrompt) {
     els.installHelp.classList.add("visible");
-    state.messages.push({
-      role: "ai",
-      text: "Jeśli nie wyskoczy instalacja: Android Chrome menu ⋮, iPhone Safari Udostępnij.",
-    });
+    addWitnessMessage("Jeśli nie wyskoczy instalacja: Android Chrome menu ⋮, iPhone Safari Udostępnij.");
     saveState();
     render();
     return;
@@ -830,6 +1025,7 @@ function buildHealthcheckReply() {
     `layers ${layerCount || 11}/11`,
     `service worker ${getServiceWorkerStatus()}`,
     `Echo ${state.echoStatus}`,
+    `voice output ${voiceOutput.enabled ? "enabled" : "disabled"}`,
     `offline cache ${offlineCacheReady ? "ready" : "pending"}`,
   ].join("\n");
 }
@@ -891,6 +1087,11 @@ function createId() {
   return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
+function addWitnessMessage(text, options = {}) {
+  state.messages.push({ role: "ai", text });
+  if (options.speakNow !== false) speakWitnessReply(text);
+}
+
 function escapeRegExp(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
@@ -939,11 +1140,31 @@ function renderPhoneStatus() {
   els.phoneMemoryStatus.textContent = "active";
   els.serviceWorkerStatus.textContent = getServiceWorkerStatus();
   els.echoStatus.textContent = state.echoStatus;
+  renderVoiceOutputStatus();
   els.layersStatus.textContent = `${layerCount || 11}/11 ready`;
 
   if (!deferredInstallPrompt) {
     els.installApp.textContent = "Zainstaluj na telefonie";
   }
+}
+
+function renderVoiceOutputStatus() {
+  if (!els.voiceToggle || !els.voiceOutputStatus) return;
+  if (!supportsVoiceOutput()) {
+    els.voiceToggle.textContent = "🔇";
+    els.voiceToggle.classList.remove("speaking");
+    els.voiceOutputStatus.textContent = "unsupported";
+    setSpeechStatus("Voice unsupported");
+    return;
+  }
+
+  els.voiceToggle.textContent = voiceOutput.enabled ? "🔊" : "🔇";
+  els.voiceToggle.classList.toggle("speaking", voiceOutput.speaking);
+  els.voiceOutputStatus.textContent = voiceOutput.enabled
+    ? voiceOutput.speaking
+      ? "speaking"
+      : "enabled"
+    : "disabled";
 }
 
 function renderMessages() {
@@ -1031,6 +1252,9 @@ function intentLabel(intent) {
     "memory.recall": "Smart Recall z localStorage.",
     "context.daily.plan": "Analiza dziennego kontekstu.",
     "phone.status": "Status lokalnej aplikacji telefonu.",
+    "voice.off": "Voice output wyłączony.",
+    "voice.on": "Voice output włączony.",
+    "voice.stop": "Zatrzymanie mówienia.",
     healthcheck: "Healthcheck lokalnej warstwy MVP.",
     "echo.request": "Echo GPT wymaga zgody użytkownika.",
     "chat.reflect": "Rozmowa kontekstowa.",
@@ -1077,4 +1301,36 @@ function migrateMemories(memories) {
 
 function saveState() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+}
+
+function loadVoiceOutput() {
+  const fallback = {
+    enabled: true,
+    speaking: false,
+    selectedVoice: null,
+    volume: 1,
+    rate: 0.95,
+    pitch: 0.95,
+  };
+
+  try {
+    const saved = JSON.parse(localStorage.getItem(VOICE_OUTPUT_KEY));
+    return saved ? { ...fallback, ...saved, speaking: false } : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function saveVoiceOutput() {
+  localStorage.setItem(
+    VOICE_OUTPUT_KEY,
+    JSON.stringify({
+      enabled: voiceOutput.enabled,
+      speaking: false,
+      selectedVoice: voiceOutput.selectedVoice,
+      volume: voiceOutput.volume,
+      rate: voiceOutput.rate,
+      pitch: voiceOutput.pitch,
+    })
+  );
 }
