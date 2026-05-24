@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="pl">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>BRAT WITNESS - Phone MVP</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <section class="phone" aria-label="BRAT WITNESS phone MVP">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">BRAT WITNESS</p>
+            <h1>Telefon, który Cię zna.</h1>
+          </div>
+          <button id="privacyToggle" class="icon-button" title="Tryb prywatny" aria-label="Tryb prywatny">
+            <span class="shield">◇</span>
+          </button>
+        </header>
+
+        <nav class="tabs" aria-label="Widoki">
+          <button class="tab active" data-view="today">Dziś</button>
+          <button class="tab" data-view="chat">Rozmowa</button>
+          <button class="tab" data-view="memory">Pamięć</button>
+          <button class="tab" data-view="layers">Warstwy</button>
+        </nav>
+
+        <section id="today" class="view active">
+          <div class="day-status">
+            <div>
+              <span class="status-dot"></span>
+              <p>Local-first MVP</p>
+            </div>
+            <strong id="todayDate"></strong>
+          </div>
+
+          <div class="focus-panel">
+            <p class="label">Brat mówi</p>
+            <h2 id="dailyLine">Dobra, ogarnijmy dzień spokojnie.</h2>
+            <p id="dailySummary">Dodaj pierwszą rzecz przez rozmowę albo szybkie akcje.</p>
+          </div>
+
+          <div class="quick-actions" aria-label="Szybkie akcje">
+            <button data-prompt="Co mam dziś ogarnąć?">Co dziś?</button>
+            <button data-prompt="Zapamiętaj: Samsung A17 to pierwszy telefon pod MVP Brat Witness">Zapamiętaj</button>
+            <button data-prompt="Przypomnij mi jutro sprawdzić local AI na telefonie">Przypomnij</button>
+          </div>
+
+          <div class="stack-list">
+            <article>
+              <span>Intent</span>
+              <p id="intentReadout">Czeka na sygnał.</p>
+            </article>
+            <article>
+              <span>Router</span>
+              <p id="routerReadout">Lokalnie, gdy wystarczy. Chmura tylko gdy trzeba.</p>
+            </article>
+            <article>
+              <span>Prywatność</span>
+              <p id="privacyReadout">Dane zostają w pamięci przeglądarki.</p>
+            </article>
+          </div>
+        </section>
+
+        <section id="chat" class="view">
+          <div id="messages" class="messages" aria-live="polite"></div>
+          <form id="composer" class="composer">
+            <input
+              id="messageInput"
+              type="text"
+              autocomplete="off"
+              placeholder="Powiedz: co dziś, zapamiętaj, przypomnij..."
+              aria-label="Wiadomość do Brat Witness"
+            />
+            <button type="submit" title="Wyślij" aria-label="Wyślij">➜</button>
+          </form>
+        </section>
+
+        <section id="memory" class="view">
+          <div class="section-head">
+            <div>
+              <p class="label">Relational Memory</p>
+              <h2>Pamięć, która ma sens</h2>
+            </div>
+            <button id="clearMemory" class="small-danger">Wyczyść</button>
+          </div>
+          <div id="memoryList" class="memory-list"></div>
+        </section>
+
+        <section id="layers" class="view">
+          <div class="section-head">
+            <div>
+              <p class="label">11 warstw telefonu</p>
+              <h2>Szkielet MVP v0.1</h2>
+            </div>
+          </div>
+          <div id="layerGrid" class="layer-grid"></div>
+        </section>
+      </section>
+    </main>
+
+    <script src="./app.js"></script>
+  </body>
+</html>
