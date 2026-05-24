@@ -45,9 +45,15 @@ W zakładce `Rozmowa` wpisz:
 - `healthcheck`
 - `co dziś`
 - `zapamiętaj projekt Aurora z Adamem, ważne`
+- `Projekt Aurora z Adamem jest ważny`
+- `tak`
 - `co pamiętasz o Aurorze`
 - `jak było z Adamem`
 - `znajdź fakturę`
+- `Jutro faktura`
+- `nie teraz`
+- `Echo, przeanalizuj Aurorę`
+- `pokaż log witness`
 - `przypomnij mi jutro o fakturze`
 - `echo rozwiń projekt Aurora`
 
@@ -63,6 +69,45 @@ W zakładce `Rozmowa` wpisz:
 - Przypomnienia jako lokalne zadania.
 - Ekran `Telefon` ze statusem aplikacji, storage, service workera, Echo i warstw.
 - Komenda `healthcheck`.
+
+## Live Companion Loop
+
+Główna ścieżka rozmowy idzie przez `handleLiveInput(input, source)` i `witnessOrchestrator(input, source)`. Użytkownik nie musi używać magicznych komend. Może powiedzieć normalnie: `Projekt Aurora z Adamem jest ważny`, a Witness sam wykryje, że to kandydat do pamięci i zapyta o zgodę.
+
+Kolejność:
+
+1. zatrzymanie aktualnego głosu,
+2. obsługa `pendingAction`, jeśli czeka zgoda,
+3. analiza kontekstu,
+4. decyzja companion engine,
+5. utworzenie zgody albo lokalne wykonanie,
+6. odpowiedź tekstem i głosem.
+
+## Witness Orchestrator
+
+Orchestrator pilnuje pamięci, Echo, phone bridge, ryzyka, zgody, logu decyzji i odpowiedzi głosowej. Ważne decyzje trafiają do `witnessLog`, który pokażesz zdaniem:
+
+```text
+pokaż log witness
+```
+
+## Memory V3 Event Graph
+
+Pamięć ma teraz formę event graph. Wpisy mają `kind`, `topic`, `content`, `people`, `project`, `emotion`, `importance`, `source`, `links`, `confirmations` i `tags`.
+
+Witness nie zapisuje ważnych rzeczy bez zgody. Najpierw pyta:
+
+```text
+To brzmi ważnie. Mam zapamiętać?
+```
+
+## Consent model
+
+Centralny `pendingAction` obsługuje pamięć, przypomnienia, Echo, notatki, czyszczenie pamięci i akcje telefonu.
+
+Potwierdzenia: `tak`, `dobra`, `dawaj`, `potwierdzam`, `zapisz`, `zapamiętaj`, `leć`.
+
+Anulowanie: `nie`, `anuluj`, `nie teraz`, `odpuść`, `stop`.
 
 ## Co jest mockiem
 
@@ -110,9 +155,13 @@ Android Chrome jest rekomendowany. Jeśli przeglądarka nie wspiera voice output
 Ta przeglądarka nie wspiera voice output.
 ```
 
+## Voice-first mode
+
+Mikrofon i głos wyjściowy są spięte z live loop. Rozpoznany tekst idzie przez `handleLiveInput()`, a Witness czyta krótkie odpowiedzi, pytania o zgodę i alerty. Długie logi, JSON i diagnostyka nie są czytane.
+
 ## Echo GPT Layer
 
-Echo jest domyślnie wyłączone. Komendy typu `echo`, `rozwiń`, `przeanalizuj`, `głębiej`, `strategia`, `napisz lepiej` ustawiają router na `needsEcho` i pokazują zgodę:
+Echo jest domyślnie wyłączone. Prośby typu `echo`, `rozwiń`, `przeanalizuj`, `głębiej`, `strategia`, `napisz lepiej` ustawiają router na `needsEcho` i pokazują zgodę:
 
 ```text
 To wymaga Echo GPT. Wysłać tylko potrzebny kontekst?
@@ -126,6 +175,21 @@ Frontend wysyłałby tylko:
 - `privacyNote`
 
 Nie wysyła całej pamięci i nie ma klucza API.
+
+## Echo safety
+
+`callEchoGPT()` zostaje mockiem. Payload Echo zawiera tylko `userRequest`, `selectedMemory`, `taskType` i `privacyNote`. Frontend nie ma klucza API.
+
+## Phone Bridge limitations
+
+`phoneBridge` jest placeholderem PWA:
+
+- `createReminder` zapisuje lokalne task/event,
+- `createNote` zapisuje lokalną notatkę,
+- `openApp` jest zablokowany,
+- `nativeBridge` ma wartość `false`.
+
+Akcje telefonu wymagają zgody i docelowo natywnego mostu Android.
 
 ## Gdzie podpiąć prawdziwe GPT API
 

@@ -6,6 +6,24 @@
 - Oczekiwane: wiadomość `Dobra, lokalna warstwa gotowa. Wszystko siedzi na tym telefonie.`
 - W `localStorage` powinny powstać: `bratWitnessPhoneConfig`, `bratWitnessLayers`, `brat-witness-phone-memory-v2`.
 
+## Live companion loop
+
+Komenda:
+
+```text
+Projekt Aurora z Adamem jest ważny
+```
+
+Oczekiwane: Witness nie zapisuje od razu. Pyta: `Mam zapamiętać?`
+
+Potem:
+
+```text
+tak
+```
+
+Oczekiwane: zapis do Memory V3 i odpowiedź `Dobra, mam to.`
+
 ## PWA install
 
 - Android Chrome: kliknij `Zainstaluj na telefonie` albo użyj menu `⋮`.
@@ -41,6 +59,24 @@ znajdź fakturę
 ```
 
 Oczekiwane: krótki skrót, powiązania i źródła pamięci.
+
+## Reminder consent
+
+Komenda:
+
+```text
+Jutro faktura
+```
+
+Oczekiwane: Witness pyta, czy zrobić przypomnienie.
+
+Potem:
+
+```text
+nie teraz
+```
+
+Oczekiwane: pending action jest anulowane.
 
 ## Reminder
 
@@ -81,10 +117,20 @@ Oczekiwane: status `localStorage`, `memory`, `router`, `layers`, service workera
 Komenda:
 
 ```text
-echo rozwiń projekt Aurora
+Echo, przeanalizuj Aurorę
 ```
 
-Oczekiwane: aplikacja prosi o zgodę. Po kliknięciu `Użyj Echo GPT` pokazuje odpowiedź `Echo GPT mock`.
+Oczekiwane: aplikacja prosi o zgodę i głosem pyta o wysłanie tylko potrzebnego kontekstu. Po `tak` albo kliknięciu `Użyj Echo GPT` pokazuje odpowiedź `Echo GPT mock`.
+
+## Witness log
+
+Komenda:
+
+```text
+pokaż log witness
+```
+
+Oczekiwane: ostatnie decyzje orchestratora, bez czytania długiego logu głosem.
 
 ## Microphone input
 

@@ -2,6 +2,7 @@ const STORAGE_KEY = "brat-witness-phone-memory-v2";
 const CONFIG_KEY = "bratWitnessPhoneConfig";
 const LAYERS_KEY = "bratWitnessLayers";
 const VOICE_OUTPUT_KEY = "bratWitnessVoiceOutput";
+const WITNESS_LOG_LIMIT = 30;
 
 // boot
 const layers = [
@@ -65,6 +66,14 @@ const els = {
   serviceWorkerStatus: document.querySelector("#serviceWorkerStatus"),
   echoStatus: document.querySelector("#echoStatus"),
   voiceOutputStatus: document.querySelector("#voiceOutputStatus"),
+  currentMode: document.querySelector("#currentMode"),
+  pendingActionStatus: document.querySelector("#pendingActionStatus"),
+  lastDecision: document.querySelector("#lastDecision"),
+  riskLevel: document.querySelector("#riskLevel"),
+  phoneBridgeStatus: document.querySelector("#phoneBridgeStatus"),
+  nativeBridgeStatus: document.querySelector("#nativeBridgeStatus"),
+  voiceLoopStatus: document.querySelector("#voiceLoopStatus"),
+  memoryGraphStatus: document.querySelector("#memoryGraphStatus"),
   layersStatus: document.querySelector("#layersStatus"),
   installApp: document.querySelector("#installApp"),
   voiceToggle: document.querySelector("#voiceToggle"),
@@ -398,15 +407,364 @@ function setView(viewName) {
 }
 
 function handleUserMessage(text) {
+  handleLiveInput(text, "text");
+}
+
+function handleLiveInput(input, source = "text") {
+  const text = String(input || "").trim();
+  if (!text) return;
+
   stopSpeaking({ silent: true });
   state.messages.push({ role: "user", text });
-  const result = runIntentEngine(text);
-  state.lastIntent = result.intent;
-  state.lastRoute = result.route;
+  const result = witnessOrchestrator(text, source);
+  state.lastIntent = result.intent || "live.input";
+  state.lastRoute = result.route || "lokalnie";
   addWitnessMessage(result.reply, { speakNow: false });
   saveState();
   render();
   speakWitnessReply(result.reply, result);
+}
+
+function witnessOrchestrator(input, source = "text") {
+  if (state.pendingAction) {
+    return resolvePendingConfirmation(input);
+  }
+
+  const context = analyzeLiveContext(input, source);
+  const move = decideCompanionMove(context);
+  const result = executeCompanionMove(move, context);
+  logWitnessDecision(context, move, result);
+  return result;
+}
+
+function analyzeLiveContext(input, source = "text") {
+  const text = normalize(input);
+  const legacy = parseCommand(input);
+  const project = extractProject(input, legacy.type || inferType(input));
+  const people = extractPeople(input, legacy.type || inferType(input));
+  const emotion = extractEmotion(input, legacy.type || inferType(input));
+  const importance = inferImportance(text);
+  const wantsRecall = startsWithAny(text, ["znajdz ", "znajdź ", "jak bylo z ", "jak było z ", "co pamietasz o ", "co pamiętasz o "]);
+  const taskCandidate = /(jutro|faktura|musze|muszę|trzeba|przypomnij|nie chce zapomniec|nie chcę zapomnieć)/.test(text);
+  const memoryCandidate =
+    importance === "high" ||
+    Boolean(project) ||
+    Boolean(emotion) ||
+    /(wazn|ważn|boje|boję|wkurza|nie chce zapomniec|nie chcę zapomnieć|projekt|adam|auror)/.test(text);
+  const requiresPhone = /(otworz|otwórz|zadzwon|telefon|aplikacj|kalendarz)/.test(text);
+
+  return {
+    input,
+    source,
+    normalized: text,
+    legacyIntent: legacy.intent,
+    intent: inferLiveIntent(text, legacy.intent, wantsRecall),
+    emotion,
+    importance,
+    project,
+    people,
+    candidateForMemory: memoryCandidate,
+    isAction: taskCandidate || requiresPhone,
+    taskCandidate,
+    requiresEcho: detectEchoNeed(input),
+    requiresPhone,
+    mode: inferConversationMode(text),
+    riskLevel: requiresPhone || text.includes("wyczysc") || text.includes("wyczyść") ? "high" : taskCandidate ? "medium" : "low",
+    relatedContext: getRelatedContext(input),
+  };
+}
+
+function inferLiveIntent(text, legacyIntent, wantsRecall) {
+  if (["healthcheck", "phone.status", "voice.off", "voice.on", "voice.stop"].includes(legacyIntent)) return legacyIntent;
+  if (text.includes("pokaz log witness") || text.includes("pokaż log witness")) return "witness.log";
+  if (wantsRecall) return "memory.recall";
+  if (text.includes("co dzis") || text.includes("co dziś")) return "context.daily.plan";
+  if (detectEchoNeed(text)) return "echo.request";
+  if (text.includes("wyczysc pamiec") || text.includes("wyczyść pamięć")) return "memory.clear";
+  return "live.talk";
+}
+
+function inferConversationMode(text) {
+  if (/(musze|muszę|plan|jutro|faktura|ogarn)/.test(text)) return "planning";
+  if (/(wkurza|boje|boję|stres|ciesze|cieszę)/.test(text)) return "feeling";
+  if (/(bo |czyli|to znaczy|wyjasniam|wyjaśniam)/.test(text)) return "explaining";
+  return "talking";
+}
+
+function decideCompanionMove(context) {
+  if (context.intent === "healthcheck") return "SHOW_STATUS";
+  if (context.intent === "phone.status") return "SHOW_STATUS";
+  if (["voice.off", "voice.on", "voice.stop"].includes(context.intent)) return "EXECUTE_LOCAL_SAFE";
+  if (context.intent === "witness.log") return "SHOW_STATUS";
+  if (context.intent === "memory.recall") return "EXECUTE_LOCAL_SAFE";
+  if (context.intent === "context.daily.plan") return "EXECUTE_LOCAL_SAFE";
+  if (context.intent === "memory.clear") return "BLOCK_UNSAFE";
+  if (context.requiresEcho) return "ASK_TO_USE_ECHO";
+  if (context.requiresPhone) return "BLOCK_UNSAFE";
+  if (context.taskCandidate) return "ASK_TO_CREATE_REMINDER";
+  if (context.candidateForMemory) return "ASK_TO_REMEMBER";
+  if (context.input.length < 3) return "ASK_FOR_CLARIFICATION";
+  return "RESPOND_ONLY";
+}
+
+function executeCompanionMove(move, context) {
+  state.lastDecision = move;
+  state.lastRiskLevel = context.riskLevel;
+
+  if (move === "SHOW_STATUS") {
+    if (context.intent === "healthcheck") return { intent: "healthcheck", route: "lokalnie", reply: buildHealthcheckReply() };
+    if (context.intent === "witness.log") return { intent: "witness.log", route: "lokalnie", reply: formatWitnessLog() };
+    return { intent: "phone.status", route: "lokalnie", reply: "Lokalnie. Pamięć działa. Router gotowy. Chmura wyłączona." };
+  }
+
+  if (move === "ASK_TO_REMEMBER") {
+    createPendingAction("memory.save", "To brzmi ważnie. Zapamiętać?", context.riskLevel, "local", "selected input only", {
+      entry: createMemoryEntry(context, "memory"),
+    });
+    return { intent: "pending.memory", route: "lokalnie", pendingAction: true, reply: "Jasne. To brzmi ważnie. Mam zapamiętać?" };
+  }
+
+  if (move === "ASK_TO_CREATE_REMINDER") {
+    createPendingAction("reminder.create", "Zrobić z tego przypomnienie albo zadanie?", "medium", "local", "selected input only", {
+      entry: createMemoryEntry(context, "task"),
+    });
+    return { intent: "pending.reminder", route: "lokalnie", pendingAction: true, reply: "Brzmi jak coś do ogarnięcia. Mam zrobić z tego przypomnienie?" };
+  }
+
+  if (move === "ASK_TO_USE_ECHO") {
+    const selectedMemory = context.relatedContext.slice(0, 2).map(toEchoMemory);
+    createPendingAction("echo.use", "Echo może wejść głębiej.", "medium", "mock-cloud", "selected memory only", {
+      echoPayload: prepareEchoPayload(context.input, selectedMemory, inferEchoTaskType(context.input)),
+    });
+    state.echoStatus = "ready";
+    return { intent: "echo.request", route: "needsEcho", pendingAction: true, reply: "Echo może wejść głębiej. Wysłać tylko potrzebny kontekst?" };
+  }
+
+  if (move === "BLOCK_UNSAFE") {
+    createPendingAction("unsafe.confirm", "To dotknie telefonu albo danych.", "high", "blocked", "none", { input: context.input });
+    return { intent: "blocked.unsafe", route: "lokalnie", pendingAction: true, reply: "Nie ruszam tego bez twojej zgody. Potwierdzasz?" };
+  }
+
+  if (move === "EXECUTE_LOCAL_SAFE") {
+    return executeLocal(context);
+  }
+
+  if (move === "ASK_FOR_CLARIFICATION") {
+    return { intent: "clarify", route: "lokalnie", reply: "Jestem. Dopowiedz mi jedno zdanie, a złapię kontekst." };
+  }
+
+  return { intent: "respond.only", route: "lokalnie", reply: buildCompanionResponse(context) };
+}
+
+function executeLocal(context) {
+  if (context.intent === "voice.off" || context.intent === "voice.on" || context.intent === "voice.stop") {
+    return runIntentEngine(context.input);
+  }
+  if (context.intent === "memory.recall") {
+    const recall = smartRecall(stripPrefixes(context.input, ["znajdź", "znajdz", "jak było z", "jak bylo z", "co pamiętasz o", "co pamietasz o"]));
+    return { intent: "memory.recall", route: "lokalnie", reply: formatRecall(recall) };
+  }
+  if (context.intent === "context.daily.plan") {
+    return { intent: "context.daily.plan", route: "lokalnie", reply: buildDailyReply() };
+  }
+  return { intent: "local.safe", route: "lokalnie", reply: buildCompanionResponse(context) };
+}
+
+function createPendingAction(type, summary, riskLevel, executionMode, dataUsed, payload) {
+  state.pendingAction = {
+    id: createId(),
+    type,
+    summary,
+    riskLevel,
+    executionMode,
+    dataUsed,
+    payload,
+    createdAt: new Date().toISOString(),
+  };
+}
+
+function resolvePendingConfirmation(input) {
+  const text = normalize(input);
+  if (isCancel(text)) {
+    const previous = state.pendingAction;
+    state.pendingAction = null;
+    logWitnessDecision({ input, intent: "pending.cancel", riskLevel: previous ? previous.riskLevel : "low" }, "CANCEL_PENDING", {
+      reply: "Nie teraz? Okej, odpuszczam.",
+    });
+    return { intent: "pending.cancel", route: "lokalnie", reply: "Nie teraz? Okej, odpuszczam." };
+  }
+
+  if (!isConfirm(text)) {
+    return {
+      intent: "pending.awaiting",
+      route: "lokalnie",
+      pendingAction: true,
+      reply: "Jasne. Powiedz tylko: tak albo nie.",
+    };
+  }
+
+  const action = state.pendingAction;
+  state.pendingAction = null;
+  const result = executePendingAction(action);
+  logWitnessDecision({ input, intent: action.type, riskLevel: action.riskLevel }, "CONFIRM_PENDING", result);
+  return result;
+}
+
+function executePendingAction(action) {
+  if (!action) return { intent: "pending.none", route: "lokalnie", reply: "Nie mam teraz nic do potwierdzenia." };
+
+  if (action.type === "memory.save") {
+    const saved = addGraphEntry(action.payload.entry, "tak");
+    return { intent: "memory.saved", route: "lokalnie", reply: saved.importance === "high" ? "Dobra, mam to. To wygląda ważnie." : "Dobra, mam to." };
+  }
+
+  if (action.type === "reminder.create") {
+    const saved = phoneBridge.createReminder(action.payload.entry);
+    return { intent: "task.saved", route: "lokalnie", reply: saved ? "Dobra, trzymam to jako lokalne przypomnienie." : "Nie udało się tego zapisać lokalnie." };
+  }
+
+  if (action.type === "echo.use") {
+    state.echoEnabled = true;
+    state.echoStatus = "active";
+    const echo = callEchoGPT(action.payload.echoPayload);
+    return { intent: "echo.mock", route: "needsEcho", reply: `${echo.provider}:\n${echo.text}` };
+  }
+
+  if (action.type === "unsafe.confirm") {
+    return { intent: "unsafe.blocked", route: "lokalnie", reply: "Na razie blokuję. W PWA nie ruszam telefonu ani danych bez natywnego mostu." };
+  }
+
+  return { intent: "pending.done", route: "lokalnie", reply: "Dobra, załatwione lokalnie." };
+}
+
+function isConfirm(text) {
+  return ["tak", "dobra", "dawaj", "potwierdzam", "zapisz", "zapamietaj", "zapamiętaj", "lec", "leć"].includes(text);
+}
+
+function isCancel(text) {
+  return ["nie", "anuluj", "nie teraz", "odpusc", "odpuść", "stop"].includes(text);
+}
+
+const phoneBridge = {
+  nativeBridge: false,
+  createReminder(entry) {
+    addGraphEntry({ ...entry, kind: "task" }, "tak");
+    return true;
+  },
+  createNote(entry) {
+    addGraphEntry({ ...entry, kind: "note" }, "tak");
+    return true;
+  },
+  openApp() {
+    return { ok: false, reason: "blocked-placeholder" };
+  },
+  requestPermission() {
+    return { ok: false, reason: "native bridge unavailable" };
+  },
+  getCapabilities() {
+    return {
+      nativeBridge: false,
+      createReminder: "local task/event",
+      createNote: "local note",
+      openApp: "blocked-placeholder",
+    };
+  },
+};
+
+function createMemoryEntry(context, kind = "memory") {
+  const now = new Date().toISOString();
+  const entry = {
+    id: createId(),
+    kind,
+    topic: inferTopic(context.input, kind === "task" ? "task" : inferType(context.input)),
+    content: context.input,
+    people: context.people || [],
+    project: context.project || "",
+    emotion: context.emotion || "",
+    importance: context.importance || "medium",
+    source: context.source || "text",
+    createdAt: now,
+    updatedAt: now,
+    lastSeen: now,
+    links: [],
+    confirmations: [],
+    tags: buildTags(context.input, kind, context.project || context.input, context.people || [], context.project || "", context.emotion || ""),
+  };
+  entry.links = linkRelatedMemories(entry);
+  return entry;
+}
+
+function addGraphEntry(entry, confirmation) {
+  const now = new Date().toISOString();
+  const graphEntry = {
+    ...entry,
+    updatedAt: now,
+    lastSeen: now,
+    confirmations: [...(entry.confirmations || []), { value: confirmation, at: now }],
+  };
+  state.memories.unshift(graphEntry);
+  return graphEntry;
+}
+
+function linkRelatedMemories(entry) {
+  return state.memories
+    .filter((memory) => memory.id !== entry.id)
+    .map((memory) => ({ memory, score: scoreMemory(memory, tokenize([entry.topic, entry.content, entry.project, ...(entry.people || [])].join(" ")), normalize(entry.content)) }))
+    .filter((item) => item.score > 1)
+    .slice(0, 5)
+    .map((item) => item.memory.id);
+}
+
+function getRelatedContext(query) {
+  return smartRecall(query).matches.slice(0, 5);
+}
+
+function summarizeMemoryCluster(entries) {
+  if (!entries.length) return "Nie mam jeszcze takiego kontekstu.";
+  const projects = unique(entries.map((entry) => entry.project).filter(Boolean));
+  const people = unique(entries.flatMap((entry) => entry.people || []));
+  const important = entries.filter((entry) => entry.importance === "high").length;
+  return `Mam ${entries.length} powiązań. Projekty: ${projects.join(", ") || "brak"}. Osoby: ${people.join(", ") || "brak"}. Ważne: ${important}.`;
+}
+
+function toEchoMemory(memory) {
+  return {
+    topic: memory.topic,
+    kind: memory.kind || memory.type || "memory",
+    content: memory.content,
+    project: memory.project,
+    people: memory.people || [],
+    importance: memory.importance,
+    tags: (memory.tags || []).slice(0, 4),
+  };
+}
+
+function logWitnessDecision(context, move, result) {
+  state.witnessLog.unshift({
+    id: createId(),
+    input: context.input,
+    intent: context.intent,
+    move,
+    riskLevel: context.riskLevel || "low",
+    reply: result.reply,
+    createdAt: new Date().toISOString(),
+  });
+  state.witnessLog = state.witnessLog.slice(0, WITNESS_LOG_LIMIT);
+}
+
+function formatWitnessLog() {
+  if (!state.witnessLog.length) return "Log jest pusty. Dopiero zaczynamy.";
+  return state.witnessLog
+    .slice(0, 5)
+    .map((item) => `${item.move} / ${item.riskLevel}: ${item.intent}`)
+    .join("\n");
+}
+
+function buildCompanionResponse(context) {
+  if (context.mode === "feeling") return "Słyszę Cię. To nie brzmi jak drobiazg. Chcesz, żebym trzymał to w kontekście?";
+  if (context.mode === "planning") return "Dobra, złapmy to spokojnie. Jedna rzecz naraz.";
+  if (context.relatedContext.length) return "Kojarzę ten wątek. Mogę go połączyć z tym, co już pamiętam.";
+  return "Jestem. Mów normalnie, ja będę łapał kontekst.";
 }
 
 function runIntentEngine(rawText) {
@@ -670,22 +1028,32 @@ function scoreMemory(memory, tokens, query) {
   const haystack = normalize(
     [
       memory.topic,
+      memory.kind,
       memory.type,
       memory.content,
-      memory.people.join(" "),
+      (memory.people || []).join(" "),
       memory.project,
       memory.importance,
       memory.emotion,
-      memory.tags.join(" "),
+      (memory.tags || []).join(" "),
     ].join(" ")
   );
 
   let score = haystack.includes(query) && query.length > 2 ? 8 : 0;
+  const haystackTokens = tokenize(haystack);
   tokens.forEach((token) => {
-    if (haystack.includes(token)) score += token.length > 4 ? 3 : 1;
+    if (haystack.includes(token) || haystackTokens.some((item) => tokenMatches(item, token))) score += token.length > 4 ? 3 : 1;
   });
   if (memory.importance === "high") score += 1;
   return score;
+}
+
+function tokenMatches(a, b) {
+  if (a === b) return true;
+  if (a.length < 4 || b.length < 4) return false;
+  const aBase = a.slice(0, Math.min(5, a.length));
+  const bBase = b.slice(0, Math.min(5, b.length));
+  return aBase === bBase || a.startsWith(bBase) || b.startsWith(aBase);
 }
 
 function groupMemories(memories) {
@@ -720,10 +1088,10 @@ function formatRecall(recall) {
     .join(", ");
   const sources = recall.matches
     .slice(0, 3)
-    .map((memory) => `${TYPE_LABELS[memory.type] || memory.type}: ${memory.topic}`)
+    .map((memory) => `${TYPE_LABELS[memory.type] || memory.kind || memory.type || "memory"}: ${memory.topic}`)
     .join("; ");
 
-  return `Pamiętam parę rzeczy o tym.\nTu masz skrót, bez grzebania:\n${summary}\n\nPowiązania: ${groups}.\nŹródła pamięci: ${sources}.`;
+  return `Pamiętam parę rzeczy o tym.\nTu masz skrót, bez grzebania:\n${summary}\n\n${summarizeMemoryCluster(recall.matches)}\nŹródła pamięci: ${sources}.`;
 }
 
 // echo
@@ -777,9 +1145,18 @@ function callEchoGPT(payload) {
 }
 
 function executePendingEcho() {
+  if (state.pendingAction && state.pendingAction.type === "echo.use") {
+    const result = executePendingAction(state.pendingAction);
+    state.pendingAction = null;
+    addWitnessMessage(result.reply);
+    saveState();
+    render();
+    return;
+  }
+
   if (!state.pendingEchoPayload) {
     state.echoStatus = "disabled";
-    addWitnessMessage("Najpierw poproś o coś typu: echo rozwiń projekt Aurora.");
+    addWitnessMessage("Powiedz normalnie, co mam pogłębić. Echo wejdzie dopiero po zgodzie.");
     saveState();
     render();
     return;
@@ -1025,6 +1402,7 @@ function buildHealthcheckReply() {
     `layers ${layerCount || 11}/11`,
     `service worker ${getServiceWorkerStatus()}`,
     `Echo ${state.echoStatus}`,
+    `pending action ${state.pendingAction ? "yes" : "no"}`,
     `voice output ${voiceOutput.enabled ? "enabled" : "disabled"}`,
     `offline cache ${offlineCacheReady ? "ready" : "pending"}`,
   ].join("\n");
@@ -1121,7 +1499,7 @@ function render() {
 
   els.memoryCount.textContent = state.memories.length;
   els.memoryStatus.textContent = state.lastRoute;
-  els.echoConsent.classList.toggle("visible", state.echoStatus === "ready" && Boolean(state.pendingEchoPayload));
+  els.echoConsent.classList.toggle("visible", Boolean(state.pendingAction && state.pendingAction.type === "echo.use"));
   renderPhoneStatus();
 
   document.querySelectorAll(".filter").forEach((filter) => {
@@ -1141,6 +1519,14 @@ function renderPhoneStatus() {
   els.serviceWorkerStatus.textContent = getServiceWorkerStatus();
   els.echoStatus.textContent = state.echoStatus;
   renderVoiceOutputStatus();
+  els.currentMode.textContent = "live companion";
+  els.pendingActionStatus.textContent = state.pendingAction ? "yes" : "no";
+  els.lastDecision.textContent = state.lastDecision || "idle";
+  els.riskLevel.textContent = state.lastRiskLevel || "low";
+  els.phoneBridgeStatus.textContent = "pwa placeholder";
+  els.nativeBridgeStatus.textContent = String(phoneBridge.nativeBridge);
+  els.voiceLoopStatus.textContent = `${recognition ? "input" : "text"} / ${voiceOutput.enabled ? "voice" : "text"}`;
+  els.memoryGraphStatus.textContent = `${state.memories.length} nodes`;
   els.layersStatus.textContent = `${layerCount || 11}/11 ready`;
 
   if (!deferredInstallPrompt) {
@@ -1193,7 +1579,7 @@ function renderMemory() {
     card.innerHTML = `
       <header>
         <div>
-          <span>${TYPE_LABELS[memory.type] || memory.type}</span>
+          <span>${TYPE_LABELS[memory.type] || memory.kind || memory.type || "memory"}</span>
           <h3></h3>
         </div>
         <span>${memory.importance}</span>
@@ -1205,7 +1591,7 @@ function renderMemory() {
     card.querySelector("p").textContent = memory.content;
 
     const pillRow = card.querySelector(".pill-row");
-    [memory.project, ...memory.people, memory.emotion, ...memory.tags.slice(0, 4)]
+    [memory.project, ...(memory.people || []), memory.emotion, ...(memory.tags || []).slice(0, 4)]
       .filter(Boolean)
       .forEach((value) => {
         const pill = document.createElement("span");
@@ -1223,7 +1609,7 @@ function filterMemories(memories) {
     case "project":
       return memories.filter((memory) => memory.type === "project" || memory.project);
     case "person":
-      return memories.filter((memory) => memory.type === "person" || memory.people.length);
+      return memories.filter((memory) => memory.type === "person" || (memory.people || []).length);
     case "important":
       return memories.filter((memory) => memory.importance === "high");
     case "feeling":
@@ -1266,6 +1652,10 @@ function loadState() {
   const fallback = {
     messages: starterMessages,
     memories: [],
+    pendingAction: null,
+    witnessLog: [],
+    lastDecision: "idle",
+    lastRiskLevel: "low",
     privacyMode: true,
     echoEnabled: false,
     echoStatus: "disabled",
@@ -1286,6 +1676,7 @@ function loadState() {
 function migrateMemories(memories) {
   return memories.map((memory) => ({
     id: memory.id || `${memory.createdAt || Date.now()}-${Math.random().toString(16).slice(2)}`,
+    kind: memory.kind || memory.type || "memory",
     topic: memory.topic || memory.type || "notatka",
     type: ["note", "project", "person", "task", "feeling"].includes(memory.type) ? memory.type : "note",
     content: memory.content || memory.text || "",

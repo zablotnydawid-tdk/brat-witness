@@ -82,3 +82,12 @@ Zasady:
 - frontend nigdy nie trzyma klucza,
 - do backendu idzie tylko minimalny payload,
 - nie wysyłamy całej pamięci.
+
+## Phone Bridge limitations
+
+Obecny build to PWA. Nie ma natywnego mostu Android:
+
+- `nativeBridge: false`,
+- przypomnienia i notatki są lokalne,
+- otwieranie aplikacji telefonu jest zablokowane jako placeholder,
+- prawdziwe integracje Android wymagają osobnej warstwy natywnej.
