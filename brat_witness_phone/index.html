@@ -81,6 +81,7 @@
 
         <section id="chat" class="view">
           <div id="messages" class="messages" aria-live="polite"></div>
+          <p id="voiceStatus" class="voice-status" aria-live="polite"></p>
           <form id="composer" class="composer">
             <input
               id="messageInput"
@@ -89,6 +90,9 @@
               placeholder="Zapamiętaj, znajdź, jak było z..."
               aria-label="Wiadomość do Brat Witness"
             />
+            <button id="micButton" class="mic-button" type="button" title="Mów do Brat Witness" aria-label="Mów do Brat Witness">
+              🎤
+            </button>
             <button type="submit" title="Wyślij" aria-label="Wyślij">➜</button>
           </form>
         </section>

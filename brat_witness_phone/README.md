@@ -56,6 +56,7 @@ W zakładce `Rozmowa` wpisz:
 - PWA manifest i service worker offline-first.
 - Auto-init pierwszego startu w `localStorage`.
 - Boot 11/11 warstw MVP.
+- Voice Input przez Web Speech API, jeśli wspiera go przeglądarka.
 - Relational Memory v2.
 - Smart Recall po projekcie, osobie i tagu.
 - Przypomnienia jako lokalne zadania.
@@ -67,6 +68,22 @@ W zakładce `Rozmowa` wpisz:
 - Echo GPT Layer jest mockiem w `app.js`.
 - `server-example.js` pokazuje kierunek backendu, ale nie woła jeszcze prawdziwego API.
 - Local AI jest placeholderem.
+
+## Voice Input
+
+W zakładce `Rozmowa` przy inputcie jest przycisk `🎤`. Na Android Chrome aplikacja używa Web Speech API (`SpeechRecognition` / `webkitSpeechRecognition`) do rozpoznania mowy i wpisania tekstu do pola rozmowy.
+
+Statusy:
+
+- `Słucham...`
+- `Przetwarzam...`
+- `Mikrofon niedostępny`
+
+Aplikacja nie zapisuje audio i nie wysyła plików audio. Używa tylko mechanizmu rozpoznawania mowy dostępnego w przeglądarce. Jeśli przeglądarka nie wspiera tej funkcji, pokaże komunikat:
+
+```text
+Ta przeglądarka nie wspiera mikrofonu.
+```
 
 ## Echo GPT Layer
 

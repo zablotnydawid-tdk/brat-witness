@@ -37,6 +37,8 @@ const state = loadState();
 let deferredInstallPrompt = null;
 let serviceWorkerReady = false;
 let offlineCacheReady = false;
+let recognition = null;
+let isListening = false;
 
 const els = {
   phone: document.querySelector(".phone"),
@@ -48,8 +50,10 @@ const els = {
   routerReadout: document.querySelector("#routerReadout"),
   privacyReadout: document.querySelector("#privacyReadout"),
   messages: document.querySelector("#messages"),
+  voiceStatus: document.querySelector("#voiceStatus"),
   input: document.querySelector("#messageInput"),
   composer: document.querySelector("#composer"),
+  micButton: document.querySelector("#micButton"),
   memoryCount: document.querySelector("#memoryCount"),
   memoryStatus: document.querySelector("#memoryStatus"),
   memoryList: document.querySelector("#memoryList"),
@@ -130,7 +134,15 @@ function init() {
 
   els.installApp.addEventListener("click", installOnPhone);
   els.useEcho.addEventListener("click", executePendingEcho);
+  els.micButton.addEventListener("click", () => {
+    if (isListening) {
+      stopListening();
+      return;
+    }
+    startListening();
+  });
 
+  initVoiceInput();
   refreshServiceWorkerStatus();
   refreshOfflineCacheStatus();
   renderLayers();
@@ -142,6 +154,80 @@ function init() {
     saveState();
   }
   render();
+}
+
+// voice
+function initVoiceInput() {
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+  if (!SpeechRecognition) {
+    setVoiceStatus("Mikrofon niedostępny");
+    els.micButton.disabled = false;
+    els.micButton.title = "Ta przeglądarka nie wspiera mikrofonu.";
+    return;
+  }
+
+  recognition = new SpeechRecognition();
+  recognition.lang = "pl-PL";
+  recognition.interimResults = true;
+  recognition.continuous = false;
+
+  recognition.onstart = () => {
+    isListening = true;
+    els.micButton.classList.add("listening");
+    setVoiceStatus("Słucham...");
+  };
+
+  recognition.onresult = (event) => {
+    const transcript = Array.from(event.results)
+      .map((result) => result[0].transcript)
+      .join(" ")
+      .trim();
+    els.input.value = transcript;
+  };
+
+  recognition.onerror = () => {
+    isListening = false;
+    els.micButton.classList.remove("listening");
+    setVoiceStatus("Mikrofon niedostępny");
+  };
+
+  recognition.onend = () => {
+    const text = els.input.value.trim();
+    isListening = false;
+    els.micButton.classList.remove("listening");
+    if (!text) {
+      setVoiceStatus("");
+      return;
+    }
+    setVoiceStatus("Przetwarzam...");
+    handleUserMessage(text);
+    els.input.value = "";
+    setTimeout(() => setVoiceStatus(""), 900);
+  };
+}
+
+function startListening() {
+  if (!recognition) {
+    setVoiceStatus("Ta przeglądarka nie wspiera mikrofonu.");
+    return;
+  }
+
+  try {
+    recognition.start();
+  } catch {
+    stopListening();
+  }
+}
+
+function stopListening() {
+  if (!recognition) return;
+  setVoiceStatus("Przetwarzam...");
+  recognition.stop();
+}
+
+function setVoiceStatus(message) {
+  els.voiceStatus.textContent = message;
 }
 
 // router

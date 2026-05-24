@@ -300,7 +300,7 @@ h2 {
 
 .composer {
   display: grid;
-  grid-template-columns: 1fr 46px;
+  grid-template-columns: 1fr 46px 46px;
   gap: 8px;
   padding-top: 6px;
   position: sticky;
@@ -325,11 +325,32 @@ h2 {
 
 .composer button {
   width: 46px;
+  height: 46px;
   border-radius: 50%;
   background: var(--green);
   color: var(--ink);
   font-size: 1.25rem;
   font-weight: 900;
+}
+
+.mic-button {
+  background: var(--panel-2) !important;
+  color: var(--text) !important;
+  border: 1px solid var(--line);
+  font-size: 1.05rem !important;
+}
+
+.mic-button.listening {
+  background: var(--amber) !important;
+  color: var(--ink) !important;
+  box-shadow: 0 0 0 4px rgba(241, 180, 91, 0.16), 0 0 22px rgba(241, 180, 91, 0.62);
+}
+
+.voice-status {
+  min-height: 20px;
+  color: var(--amber);
+  font-size: 0.86rem;
+  padding: 0 2px;
 }
 
 .memory-stats {
